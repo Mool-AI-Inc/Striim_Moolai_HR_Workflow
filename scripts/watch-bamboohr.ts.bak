@@ -1,0 +1,41 @@
+/**
+ * Keep the platform's employees table in step with BambooHR, hands-off.
+ * @lifespan THROWAWAY — demo runner.
+ *
+ *   npm run watch:bamboohr
+ *
+ * Striim lands identity into bamboohr_employees on its own, but the fields it cannot see
+ * (hireDate, dateOfBirth, status) come from BambooHR's custom report — see
+ * scripts/enrich-bamboohr.ts. Running that once is a manual step; for a live demo it has to
+ * happen on its own, so this just does it on a timer.
+ *
+ * Deliberately a separate process from the app. The demo API should not grow a background
+ * job: if this dies, the platform keeps serving whatever it already has.
+ */
+import { spawn } from "node:child_process";
+
+const EVERY_MS = Number(process.env.WATCH_INTERVAL_MS ?? 30_000);
+
+function runOnce(): Promise<void> {
+  return new Promise((resolve) => {
+    const p = spawn("npx", ["tsx", "--env-file-if-exists=.env", "scripts/enrich-bamboohr.ts"],
+                    { stdio: ["ignore", "pipe", "pipe"], shell: true });
+    let out = "";
+    p.stdout.on("data", (d: Buffer) => { out += d.toString(); });
+    p.stderr.on("data", (d: Buffer) => { out += d.toString(); });
+    p.on("close", () => {
+      const line = out.split("\n").find((l) => l.includes("BambooHR employees now")) ?? out.trim().slice(0, 160);
+      console.log(`[${new Date().toISOString().slice(11, 19)}] ${line.trim()}`);
+      resolve();
+    });
+  });
+}
+
+async function main(): Promise<void> {
+  console.log(`watching BambooHR — enriching every ${EVERY_MS / 1000}s. Ctrl-C to stop.\n`);
+  for (;;) {
+    await runOnce();
+    await new Promise((r) => setTimeout(r, EVERY_MS));
+  }
+}
+main().catch((e: Error) => { console.error(e.message); process.exit(1); });

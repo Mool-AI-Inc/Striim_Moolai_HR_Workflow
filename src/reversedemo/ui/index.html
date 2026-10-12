@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workday to BambooHR</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>↩️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body class="pre-launch">
+
+<section id="landing" aria-label="Launch">
+  <div class="lp-header">
+    <span class="lp-mark" aria-hidden="true"></span>
+    <span class="lp-brand">MoolAI</span>
+    <span class="lp-product">HRIS Migration</span>
+  </div>
+  <h1 class="lp-title">Workday to BambooHR, through Striim</h1>
+  <p class="lp-lead">Worker records are read from the Workday Adaptive tenant, Striim replicates them between two PostgreSQL databases by log-based CDC, and each person is then created in BambooHR. The dots below are live health checks, not decoration.</p>
+  <ol class="lp-journey" id="lpJourney"></ol>
+  <div class="lp-footer">
+    <p class="lp-count" id="lpCount"><span class="dot" aria-hidden="true"></span></p>
+    <button type="button" class="btn btn-primary lp-launch" id="btnLaunch">
+      Launch demo <span aria-hidden="true">›</span>
+    </button>
+  </div>
+</section>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <div>
+      <h1>Reverse pipeline — Workday → BambooHR</h1>
+      <p class="subtitle">Workday/Adaptive <span class="arrow">→</span> Striim <span class="arrow">→</span> PostgreSQL <span class="arrow">→</span> BambooHR</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <div id="modeBadges" class="mode-badges"></div>
+    <span id="connDot" class="conn"><span class="conn-dot"></span><span class="conn-label">connecting</span></span>
+  </div>
+</header>
+
+<div class="actionbar">
+  <button id="btnRefresh" class="btn btn-primary">Re-read Workday</button>
+  <select id="pick" class="picker" aria-label="Workday member to import"></select>
+  <button id="btnImport" class="btn">Import selected into BambooHR</button>
+  <span class="spacer"></span>
+  <button id="btnReset" class="btn btn-ghost">Clear local state</button>
+</div>
+
+<p class="warnbar" id="warnbar"></p>
+
+<main>
+  <section class="cards" id="cards" aria-label="System status"></section>
+
+  <div class="split">
+    <section class="panel" aria-label="Live pipeline">
+      <div class="panel-head">
+        <h2>Live pipeline</h2>
+        <select id="focusPick" class="picker" aria-label="Which member to follow"></select>
+      </div>
+      <div id="pipeline" class="pipeline"></div>
+      <p id="pipelineHint" class="hint"></p>
+    </section>
+
+    <section class="panel" aria-label="Activity log">
+      <div class="panel-head">
+        <h2>Activity</h2>
+        <label class="follow"><input type="checkbox" id="followTail" checked> follow</label>
+      </div>
+      <ol id="log" class="log"></ol>
+    </section>
+  </div>
+
+  <section class="panel" aria-label="Imported employees">
+    <div class="panel-head">
+      <h2>Workday member → BambooHR employee</h2>
+      <span id="mapSummary" class="muted"></span>
+    </div>
+    <p class="hint slot-note">
+      The mapping is keyed on the Workday member id and persisted in Postgres, so the same person
+      can never be imported twice. BambooHR creates are permanent — the API has no delete — so a
+      re-import matches the existing person by their synthesised email rather than making a second.
+    </p>
+    <div class="table-wrap">
+      <table class="grid">
+        <thead><tr>
+          <th>Member</th><th>Name</th><th>Synthesised email</th><th>Pay</th>
+          <th>Workday</th><th>Striim</th><th>PostgreSQL</th><th>BambooHR</th><th>Bamboo id</th><th></th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

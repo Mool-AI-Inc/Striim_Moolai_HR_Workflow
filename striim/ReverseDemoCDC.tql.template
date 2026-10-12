@@ -1,0 +1,67 @@
+-- Striim's leg of the REVERSE pipeline: Workday -> [PostgreSQL -> PostgreSQL] -> BambooHR.
+--
+-- WHY THIS APPLICATION EXISTS
+--
+-- Striim cannot read Workday Adaptive and cannot write BambooHR. Checked against this cluster:
+-- of 364 adapters the only Workday one is WorkdayReader, which targets Workday HCM rather than
+-- Adaptive Planning, and of 50 writers none is an HR system. So on the reverse route Striim has
+-- exactly one place it can genuinely sit — between two PostgreSQL databases — and that is this
+-- application.
+--
+-- It is not decoration. The reverse pipeline writes the mapped employee into revdemo.employees in
+-- the SOURCE database and then waits for the row to appear in the TARGET database before it calls
+-- BambooHR. Nothing reaches the HRIS unless Striim delivered it, which is what makes the Striim
+-- stage on the dashboard mean something.
+--
+-- AND IT IS FAST, UNLIKE THE FORWARD LEG
+--
+-- PostgreSQLReader is log-based CDC over wal2json, not polling. The BambooHR Reader in the
+-- forward pipeline is floored at a 300-second interval by the connector; this has no such floor
+-- and measured under 15 seconds end to end. That difference is the strongest thing about this
+-- direction, so do not describe it with the forward pipeline's caveats.
+--
+-- A SEPARATE APPLICATION FROM InstantTeamsCDC, DELIBERATELY
+--
+-- That one replicates the Instant Teams platform's own ledger and is currently in HALT with its
+-- replication slot dropped. Adding a table to it would couple this demo to repairing that, and a
+-- failure in either would take out both. This has its own slot (revdemo_slot) and its own tables.
+--
+-- THE SLOT IS NOT CREATED BY THE READER. It is created once, by hand:
+--   SELECT pg_create_logical_replication_slot('revdemo_slot', 'wal2json');
+-- Striim only reports it missing, after the app has already failed to start. A dropped slot is
+-- exactly why InstantTeamsCDC is stuck.
+
+USE __NS__;
+
+CREATE APPLICATION ReverseDemoCDC;
+
+CREATE SOURCE RevSource USING PostgreSQLReader (
+  ConnectionURL: 'jdbc:postgresql://__HOST__/__SRCDB__?sslmode=require&stringtype=unspecified',
+  Username: '__USER__',
+  Password: '__PASS__',
+  ReplicationSlotName: '__REVSLOT__',
+  -- Without postgresConfig you do not get wal2json whatever the slot was created with.
+  postgresConfig: '{"ReplicationPluginConfig":{"Name":"WAL2JSON","Format":"1"}}',
+  Tables: 'revdemo.employees',
+  FilterTransactionBoundaries: true,
+  ConnectionRetryPolicy: 'retryInterval=30, maxRetries=3'
+)
+OUTPUT TO RevStream;
+
+CREATE TARGET RevTarget USING DatabaseWriter (
+  ConnectionURL: 'jdbc:postgresql://__HOST__/__TGTDB__?sslmode=require&stringtype=unspecified',
+  Username: '__USER__',
+  Password: '__PASS__',
+  Tables: 'revdemo.employees,revdemo.employees',
+  CommitPolicy: 'EventCount:100,Interval:5',
+  BatchPolicy: 'EventCount:100,Interval:5',
+  -- Its own checkpoint table in its own schema, so this app cannot collide with InstantTeamsCDC's.
+  CheckpointTable: 'revdemo.CHKPOINT',
+  -- Required rather than sloppy: the same row is re-delivered whenever the reader replays from a
+  -- checkpoint, and an upsert-shaped duplicate is the normal case, not an error.
+  IgnorableExceptionCode: 'DUPLICATE_ROW_EXISTS,NO_OP_UPDATE,NO_OP_PKUPDATE,NO_OP_DELETE',
+  ConnectionRetryPolicy: 'retryInterval=30, maxRetries=3'
+)
+INPUT FROM RevStream;
+
+END APPLICATION ReverseDemoCDC;

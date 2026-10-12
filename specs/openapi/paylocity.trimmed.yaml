@@ -1,0 +1,51 @@
+# Trimmed Paylocity Weblink OpenAPI — the endpoints our connector uses. Reference data for Prism (CI-only).
+openapi: 3.0.3
+info: { title: Paylocity Weblink (trimmed), version: "1.0" }
+paths:
+  /IdentityServer/connect/token:
+    post:
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema: { type: object }
+      responses:
+        "200":
+          description: token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token: { type: string }
+                  token_type: { type: string }
+                  expires_in: { type: integer }
+                required: [access_token, expires_in]
+  /api/v2/companies/{companyId}/employees:
+    get:
+      parameters:
+        - { name: companyId, in: path, required: true, schema: { type: string } }
+        - { name: pagesize, in: query, required: false, schema: { type: integer } }
+        - { name: pagenumber, in: query, required: false, schema: { type: integer } }
+        - { name: includetotalcount, in: query, required: false, schema: { type: boolean } }
+      responses:
+        "200":
+          description: employees
+          headers:
+            X-Pcty-Total-Count: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object, additionalProperties: true }
+  /api/v2/companies/{companyId}/employees/{employeeId}:
+    get:
+      parameters:
+        - { name: companyId, in: path, required: true, schema: { type: string } }
+        - { name: employeeId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: employee
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "404": { description: not found }

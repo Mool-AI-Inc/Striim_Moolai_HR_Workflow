@@ -1,0 +1,194 @@
+/**
+ * Fill in the employee fields Striim's BambooHR Reader cannot fetch.
+ * @lifespan PRODUCTION — the second half of leg 1. Run it after every Striim load.
+ *
+ *   npm run enrich:bamboohr
+ *
+ * WHY THIS EXISTS
+ *
+ * Striim's BambooHR Reader reads BambooHR's DIRECTORY. That gives identity and contact
+ * details — 20 columns — and omits hireDate, dateOfBirth, status, employmentHistoryStatus
+ * and payRate. Those are FIELDS on the employee record, not tables, so no table
+ * configuration reaches them: adding 'jobInfo;employmentStatus;compensation' to the reader's
+ * Tables property was tried and the connector silently ignored all three (no error, app
+ * stayed RUNNING, only Employees landed).
+ *
+ * Without those fields the platform is crippled in specific ways:
+ *   hireDate      UC2a/UC2b anchor the Day-60 durable timer on it
+ *   dateOfBirth   UC5 matches birthdays on it
+ *   status        whether this person is employed at all
+ *
+ * So this closes the gap with BambooHR's custom-report endpoint, which returns every
+ * requested field for every employee in ONE call — 110 employees in a single request here,
+ * versus 110 round trips if we fetched per employee.
+ *
+ * Note the count: the directory returns 91, the report returns 110. The report includes
+ * terminated and inactive people the directory hides. That difference is not a bug, it is
+ * the reason `status` matters.
+ */
+import { Pool } from "pg";
+import { loadEnv } from "../src/platform/config/env.js";
+import { guardPool, NEON_POOL_DEFAULTS } from "../src/platform/db/poolGuard.js";
+
+interface ReportRow {
+  id: string;
+  firstName?: string; lastName?: string; workEmail?: string;
+  hireDate?: string; dateOfBirth?: string;
+  status?: string; employmentHistoryStatus?: string;
+  department?: string; mobilePhone?: string; workPhone?: string;
+  payRate?: string;
+  gender?: string; location?: string; jobTitle?: string;
+}
+
+/**
+ * BambooHR's empty-date sentinels, normalised to null.
+ *
+ * It does not send "" for a missing date — it sends "0000-00-00", which is a legal MySQL
+ * zero-date and an illegal Postgres one. Inserting it raises
+ * "date/time field value out of range" and, before this guard, aborted the whole run.
+ */
+function date(v: string | undefined): string | null {
+  const t = (v ?? "").trim();
+  if (!t || t.startsWith("0000-00-00")) return null;
+  return t;
+}
+
+/**
+ * "65000.00 USD" -> { rate: 65000, currency: "USD" }.
+ *
+ * BambooHR puts the currency inside the pay string. Keeping them together makes the number
+ * unusable; dropping the currency makes it dangerous — this account holds USD, GBP and AUD
+ * employees, and a pay-equity average across mixed currencies is confidently wrong.
+ */
+function pay(raw: string | undefined): { rate: number | null; currency: string | null } {
+  const m = /^\s*([0-9]+(?:\.[0-9]+)?)\s*([A-Z]{3})?\s*$/.exec(raw ?? "");
+  if (!m?.[1]) return { rate: null, currency: null };
+  return { rate: Number(m[1]), currency: m[2] ?? null };
+}
+
+/** Full-Time -> RFT, Part-Time -> RPT, anything else -> SNL. Narrowing, so it is explicit. */
+function employeeType(raw: string | undefined): "RFT" | "RPT" | "SNL" {
+  const v = (raw ?? "").toLowerCase();
+  if (v.includes("full")) return "RFT";
+  if (v.includes("part")) return "RPT";
+  return "SNL";
+}
+
+/**
+ * A | L | T.
+ *
+ * Anything not clearly active or on leave is treated as terminated. Guessing "active" for an
+ * unrecognised status is the expensive direction to be wrong — it would keep onboarding
+ * someone who has left.
+ */
+function status(raw: string | undefined): "A" | "L" | "T" {
+  const v = (raw ?? "").toLowerCase();
+  if (v === "active") return "A";
+  if (v.includes("leave")) return "L";
+  return "T";
+}
+
+async function fetchReport(domain: string, apiKey: string): Promise<ReportRow[]> {
+  const auth = "Basic " + Buffer.from(`${apiKey}:x`).toString("base64");
+  const r = await fetch(
+    `https://api.bamboohr.com/api/gateway.php/${domain}/v1/reports/custom?format=JSON`,
+    {
+      method: "POST",
+      headers: { Authorization: auth, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        title: "moolai-enrich",
+        fields: ["id", "firstName", "lastName", "workEmail", "hireDate", "dateOfBirth",
+                 "status", "employmentHistoryStatus", "department", "mobilePhone", "workPhone",
+                 "payRate",
+                 // mapped one-for-one onto the Adaptive sheet's columns
+                 "gender", "location", "jobTitle"],
+      }),
+    },
+  );
+  if (!r.ok) throw new Error(`BambooHR custom report -> ${r.status}: ${(await r.text()).slice(0, 300)}`);
+  const body = (await r.json()) as { employees?: ReportRow[] };
+  return body.employees ?? [];
+}
+
+async function main(): Promise<void> {
+  const domain = process.env.BAMBOOHR_DOMAIN?.trim();
+  const apiKey = process.env.BAMBOOHR_API_KEY?.trim();
+  if (!domain || !apiKey) {
+    throw new Error("BAMBOOHR_DOMAIN and BAMBOOHR_API_KEY must be set");
+  }
+
+  const rows = await fetchReport(domain, apiKey);
+  console.log(`BambooHR custom report: ${rows.length} employees in one call`);
+
+  const pool = guardPool(new Pool({ ...NEON_POOL_DEFAULTS, connectionString: loadEnv().ledgerDatabaseUrl }), "enrich");
+  let updated = 0;
+  let inserted = 0;
+
+  const failures: { id: string; error: string }[] = [];
+
+  for (const e of rows) {
+    if (!e.id) continue;
+    try {
+    // Upsert rather than update-only: the report carries people the directory omits
+    // (terminated, inactive), so Striim's load will not have created rows for all of them.
+    const res = await pool.query(
+      `INSERT INTO employees (employee_id, first_name, last_name, email,
+                              birth_date, hire_date, employee_type, status,
+                              cost_center, phone, sms_consent, pay_rate, pay_currency,
+                              gender, location, job_title, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,false,$11,$12,$13,$14,$15,now())
+       ON CONFLICT (employee_id) DO UPDATE SET
+         birth_date    = EXCLUDED.birth_date,
+         hire_date     = EXCLUDED.hire_date,
+         employee_type = EXCLUDED.employee_type,
+         status        = EXCLUDED.status,
+         first_name    = COALESCE(NULLIF(EXCLUDED.first_name, ''), employees.first_name),
+         last_name     = COALESCE(NULLIF(EXCLUDED.last_name, ''),  employees.last_name),
+         email         = COALESCE(NULLIF(EXCLUDED.email, ''),      employees.email),
+         phone         = COALESCE(NULLIF(EXCLUDED.phone, ''),      employees.phone),
+         pay_rate      = COALESCE(EXCLUDED.pay_rate,     employees.pay_rate),
+         pay_currency  = COALESCE(EXCLUDED.pay_currency, employees.pay_currency),
+         gender        = COALESCE(EXCLUDED.gender,    employees.gender),
+         location      = COALESCE(EXCLUDED.location,  employees.location),
+         job_title     = COALESCE(EXCLUDED.job_title, employees.job_title),
+         -- sms_consent is never touched. A phone number in an HRIS is not permission to
+         -- text it, and UC7 gates on this. Consent is ours to record, not BambooHR's.
+         updated_at    = now()
+       RETURNING (xmax = 0) AS was_insert`,
+      [e.id,
+       e.firstName ?? "", e.lastName ?? "",
+       e.workEmail || `${e.id}@no-email.invalid`,
+       date(e.dateOfBirth), date(e.hireDate),
+       employeeType(e.employmentHistoryStatus), status(e.status),
+       e.department?.trim() || "CC-OPS",
+       e.mobilePhone || e.workPhone || "",
+       pay(e.payRate).rate, pay(e.payRate).currency,
+       e.gender?.trim() || null, e.location?.trim() || null, e.jobTitle?.trim() || null],
+    );
+      if (res.rows[0]?.was_insert) inserted += 1; else updated += 1;
+    } catch (err) {
+      // One unmappable record must never stop the other 111. A migration that aborts on the
+      // first bad row is a migration nobody can finish; these are collected and reported so a
+      // person can look at them, which is the only honest thing to do with a record that
+      // will not land.
+      failures.push({ id: e.id, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  const check = await pool.query<{ n: string; with_hire: string; with_dob: string; active: string; with_pay: string; with_gender: string }>(
+    `SELECT count(*) AS n,
+            count(hire_date)  AS with_hire,
+            count(birth_date) AS with_dob,
+            count(*) FILTER (WHERE status = 'A') AS active,
+            count(pay_rate) AS with_pay, count(gender) AS with_gender
+       FROM employees WHERE employee_id ~ '^[0-9]+$'`);
+  const c = check.rows[0];
+  console.log(`  inserted ${inserted}, updated ${updated}, failed ${failures.length}`);
+  for (const f of failures.slice(0, 10)) console.log(`    FAILED id=${f.id}: ${f.error.slice(0, 120)}`);
+  if (failures.length > 10) console.log(`    ...and ${failures.length - 10} more`);
+  console.log(`  BambooHR employees now: ${c?.n} rows · ${c?.with_hire} with hire date · `
+            + `${c?.with_dob} with date of birth · ${c?.active} active · ${c?.with_pay} with pay · ${c?.with_gender} with gender/location`);
+  await pool.end();
+}
+
+main().catch((e: Error) => { console.error(e.message); process.exit(1); });

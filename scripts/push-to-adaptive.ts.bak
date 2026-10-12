@@ -1,0 +1,122 @@
+/**
+ * Beat 2: push migrated employees from Postgres into Workday Adaptive Planning.
+ * @lifespan THROWAWAY — demo runner.
+ *
+ *   npm run push:adaptive            dry run — prints the exact XML, sends nothing
+ *   npm run push:adaptive -- --live  actually writes
+ *
+ * DRY RUN IS THE DEFAULT AND THAT IS DELIBERATE. Adaptive is a planning model, not a record
+ * store: a write changes numbers that people report on, and the Slack agent in this same
+ * estate answers pay-equity questions from this very instance. So the operator reads the
+ * payload first, then decides.
+ *
+ * Striim cannot do this leg — no Workday or Adaptive writer exists on the cluster in either
+ * direction. See src/platform/hris/adaptiveClient.ts.
+ */
+import { Pool } from "pg";
+import { loadEnv } from "../src/platform/config/env.js";
+import { guardPool, NEON_POOL_DEFAULTS } from "../src/platform/db/poolGuard.js";
+import { AdaptiveClient, type AdaptiveRow } from "../src/platform/hris/adaptiveClient.js";
+
+const LIVE = process.argv.includes("--live");
+const LIMIT = Number(process.env.ADAPTIVE_PUSH_LIMIT ?? 3);
+
+function required(name: string): string {
+  const v = process.env[name]?.trim();
+  if (!v) throw new Error(`missing ${name} — copy it from the WorkdayAdaptiveAgent .env`);
+  return v;
+}
+
+async function main(): Promise<void> {
+  // Both default to the sheet the MoolAI Adaptive agent ALREADY writes to successfully, so no
+  // new sheet and no Adaptive admin work is needed. "PY Pay" is the display name that agent
+  // resolves PayRate to on this sheet.
+  const SHEET = process.env.ADAPTIVE_SHEET_NAME?.trim() ?? "EUPTD - Employee Demographics";
+  const METRIC = process.env.ADAPTIVE_METRIC_COLUMN?.trim() ?? "PY Pay";
+
+  const client = new AdaptiveClient({
+    apiUrl: required("ADAPTIVE_API_URL"),
+    tokenUrl: required("ADAPTIVE_TOKEN_URL"),
+    tokenExchangeUrl: required("ADAPTIVE_TOKEN_EXCHANGE_URL"),
+    clientId: required("ADAPTIVE_CLIENT_ID"),
+    clientSecret: required("ADAPTIVE_CLIENT_SECRET"),
+    refreshToken: required("ADAPTIVE_REFRESH_TOKEN"),
+    version: process.env.ADAPTIVE_VERSION?.trim() ?? "default",
+    instanceCode: process.env.ADAPTIVE_INSTANCE_CODE?.trim(),
+    level: process.env.ADAPTIVE_LEVEL?.trim() ?? "",
+    // The sheet MUST already exist in Adaptive with an import template whose columns match
+    // the header this builds. A sheet that does not exist fails at the API, not here.
+    // Defaults to the sheet the MoolAI Adaptive agent ALREADY writes to successfully, so no
+    // new sheet and no Adaptive admin work is required. Override to target a different one.
+    sheetName: SHEET,
+    importKey: process.env.ADAPTIVE_IMPORT_KEY?.trim() ?? "EmpID_EUPTD",
+  });
+
+  const pool = guardPool(new Pool({ ...NEON_POOL_DEFAULTS, connectionString: loadEnv().ledgerDatabaseUrl }), "adaptive");
+  // Only employees that came from BambooHR, and only active ones — pushing a terminated
+  // person into a headcount plan would overstate the plan.
+  const r = await pool.query<{
+    employee_id: string; first_name: string; last_name: string;
+    cost_center: string; pay_rate: string | null; pay_currency: string | null;
+    gender: string | null; location: string | null; job_title: string | null;
+  }>(`SELECT employee_id, first_name, last_name, cost_center, pay_rate, pay_currency,
+             gender, location, job_title
+        FROM employees
+       WHERE employee_id ~ '^[0-9]+$' AND status = 'A'
+         -- No pay figure, no row. The target column on this sheet is a PAY column, and
+         -- writing a placeholder into a pay-equity model is worse than writing nothing.
+         AND pay_rate IS NOT NULL
+       ORDER BY (employee_id)::int DESC
+       LIMIT $1`, [LIMIT]);
+  await pool.end();
+
+  if (r.rows.length === 0) { console.log("no active BambooHR employees to push"); return; }
+
+  const month = new Date().toISOString().slice(0, 7).split("-").reverse().join("/"); // MM/YYYY
+  const rows: AdaptiveRow[] = r.rows.map((e) => ({
+    employeeId: e.employee_id,
+    workerName: `${e.first_name} ${e.last_name}`.trim(),
+    month,
+    // "PY Pay" is the display name the agent resolves PayRate to on this sheet.
+    metricColumn: METRIC,
+    // The real figure from BambooHR, parsed out of "65000.00 USD" by the enrichment step.
+    value: Number(e.pay_rate),
+    // Dimension names match the sheet's import template. Cost centre maps to Job_Group here
+    // because that is the column the demographics sheet carries; Gender and Location are
+    // deliberately blank rather than guessed — BambooHR's directory does not supply them and
+    // inventing demographic data into a pay-equity model would be indefensible.
+    // Every column is a real BambooHR value, so the HRIS and the planning model show the SAME
+    // record rather than two partial views of it. Nothing here is inferred: a blank means
+    // BambooHR had no value, which in a pay-equity model is the honest answer.
+    dimensions: {
+      Gender: e.gender ?? "",
+      Location: e.location ?? "",
+      Job_Group: e.cost_center,           // BambooHR department
+      Job_Classification: e.job_title ?? "",
+    },
+  }));
+
+  console.log(`${LIVE ? "LIVE" : "DRY RUN"} — ${rows.length} employee(s), sheet "${SHEET}", metric "${METRIC}"\n`);
+  for (const [i, row] of rows.entries()) {
+    const d = row.dimensions ?? {};
+    console.log(`  ${row.employeeId.padStart(4)}  ${row.workerName.padEnd(20)} `
+              + `${(d.Gender ?? "").padEnd(7)} ${(d.Location ?? "").padEnd(22)} `
+              + `${(d.Job_Group ?? "").padEnd(18)} ${(d.Job_Classification ?? "").padEnd(22)} `
+              + `${row.value} ${r.rows[i]?.pay_currency ?? ""}`);
+  }
+
+  console.log("\n--- the exact request that would be sent ---\n");
+  console.log(client.buildImportXml(rows));
+
+  if (!LIVE) {
+    console.log("\nNothing was sent. Re-run with --live to write for real.");
+    return;
+  }
+
+  console.log("\nsending...");
+  const res = await client.importRows(rows);
+  console.log(`  ${res.success ? "SUCCESS" : "FAILED"}: ${res.message}`);
+  process.exit(res.success ? 0 : 1);
+}
+
+main().catch((e: Error) => { console.error("\nERROR:", e.message); process.exit(1); });

@@ -1,0 +1,77 @@
+/* MoolAI brand tokens — VENDORED from the moolai-design-system skill.
+ *
+ * Source: moolai-design-system/assets/tokens.css  (the authoritative file; gradient stops are
+ * extracted from the logo SVGs, flat colours sampled from production screenshots).
+ *
+ * Copied into the repo rather than referenced because the skill package lives outside it and the
+ * build must not depend on a path in Downloads. test/syncdemo/theme.test.ts asserts that this file
+ * and the approval app on :5173 agree on every shared token, so the three cannot drift.
+ *
+ * Do not edit values here. Change them in the design system, then re-vendor.
+ */
+
+/* MoolAI Brand Tokens
+ * Gradient stops extracted from the source SVGs — authoritative.
+ * Flat colors sampled from production screenshots.
+ */
+
+:root {
+  /* ---- Gradients (from logo SVG — exact) ---- */
+  --moolai-bubble-start: #FF781B;   /* speech bubble, offset 12.7% */
+  --moolai-bubble-end:   #FF2807;   /* speech bubble, offset 90.9% */
+  --moolai-drop-start:   #FF2C84;   /* teardrop, magenta */
+  --moolai-drop-end:     #FF501B;   /* teardrop, orange */
+
+  --moolai-gradient-mark: linear-gradient(135deg, #FF781B 12.7%, #FF2807 90.9%);
+  --moolai-gradient-drop: linear-gradient(135deg, #FF2C84 0%, #FF501B 100%);
+  --moolai-gradient-hero: linear-gradient(180deg, #212121 0%, #E74A0A 60%, #EEA53A 100%);
+
+  /* ---- Core palette (UI) ---- */
+  --moolai-orange:        #E74A0A;  /* primary — CTAs, accents, active */
+  --moolai-orange-deep:   #DF550B;  /* hover, gradient partner */
+  --moolai-magenta:       #EC2852;  /* accent-of-accent. use sparingly */
+  --moolai-amber:         #EEA53A;  /* warm midpoint, illustration fill */
+
+  /* ---- Neutrals ---- */
+  --moolai-cream:         #F5F2ED;  /* light bg — signature neutral */
+  --moolai-cream-raised:  #FAF8F5;  /* elevated surface on cream */
+  --moolai-charcoal:      #212121;  /* dark bg; body text on cream */
+  --moolai-charcoal-raised:#2B2B2B; /* elevated surface on charcoal */
+  --moolai-peach:         #FAE2D3;  /* dark-mode tint: cards, badges */
+  --moolai-warm-grey:     #D0C3BF;  /* dividers, disabled, muted rules */
+
+  /* ---- Typography ---- */
+  --moolai-font-display:  'Instrument Sans', system-ui, sans-serif;  /* web/marketing headings */
+  --moolai-font-body:     'Inter', system-ui, sans-serif;            /* web/marketing body */
+  --moolai-font-product:  'Poppins', system-ui, sans-serif;          /* platform/product — all */
+
+  /* ---- Type scale ----
+   * Reach. Timid ranges (16/20/24) read as corporate.
+   * Scale contrast is the fastest route to hierarchy. */
+  --moolai-text-xs:   12px;
+  --moolai-text-sm:   14px;
+  --moolai-text-base: 16px;
+  --moolai-text-lg:   20px;
+  --moolai-text-xl:   28px;
+  --moolai-text-2xl:  40px;
+  --moolai-text-3xl:  56px;
+  --moolai-text-4xl:  72px;
+  --moolai-text-5xl:  96px;   /* hero — use it */
+
+  /* Headings are large, thin, calm. Weight is not authority. */
+  --moolai-weight-display: 300;
+  --moolai-weight-heading: 400;
+  --moolai-weight-body:    400;
+  --moolai-weight-emphasis:500;
+
+  /* ---- Radius ---- */
+  --moolai-radius-card: 18px;
+  --moolai-radius-pill: 999px;
+
+  /* ---- Motion ----
+   * Physics over easing. Fast out, gentle settle. */
+  --moolai-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --moolai-duration-fast: 180ms;
+  --moolai-duration-base: 320ms;
+  --moolai-duration-slow: 640ms;
+}

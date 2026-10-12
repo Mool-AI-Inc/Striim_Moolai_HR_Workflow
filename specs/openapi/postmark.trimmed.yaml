@@ -1,0 +1,35 @@
+# Trimmed Postmark OpenAPI — the one endpoint our comms connector uses. Reference data for Prism (CI-only).
+openapi: 3.0.3
+info: { title: Postmark (trimmed), version: "1.0" }
+paths:
+  /email/withTemplate:
+    post:
+      parameters:
+        - name: X-Postmark-Server-Token
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                From: { type: string }
+                To: { type: string }
+                TemplateAlias: { type: string }
+                TemplateModel: { type: object, additionalProperties: true }
+                Metadata: { type: object, additionalProperties: true }
+              required: [From, To, TemplateAlias]
+      responses:
+        "200":
+          description: sent
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "422":
+          description: rejected
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }

@@ -1,0 +1,57 @@
+# The employee sync demo, self-contained.
+#
+#   docker compose -f docker-compose.syncdemo.yml up --build
+#   -> http://localhost:3000
+#
+# Separate from docker-compose.yml on purpose: that file describes the Instant Teams platform's
+# data plane (its ledger Postgres and a Temporal server) and starting it brings up services this
+# demo has no use for. This one starts exactly two containers.
+#
+# It runs in MOCK mode. Going live means talking to a real HRIS and a real Workday Adaptive
+# planning model, which is not something a `docker compose up` should do on a stranger's machine.
+# To go live, pass the credentials through and set SYNCDEMO_MODE=live — see .env.example.
+services:
+  syncdemo-postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: syncdemo
+      POSTGRES_PASSWORD: syncdemo
+      POSTGRES_DB: syncdemo
+    ports:
+      # 5434, because 5432 is usually taken by a local install and 5433 is this repo's other
+      # compose Postgres. Nothing here needs to reach it from the host, but a psql session is the
+      # fastest way to prove the website is reading a real database rather than its own memory.
+      - "5434:5432"
+    volumes:
+      - syncdemo-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U syncdemo -d syncdemo"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  syncdemo:
+    build:
+      context: .
+      dockerfile: src/syncdemo/Dockerfile
+    depends_on:
+      # Not just "started": the app creates its schema on boot, so a Postgres that is up but not
+      # yet accepting connections would crash it on the first run and leave a confusing log.
+      syncdemo-postgres:
+        condition: service_healthy
+    environment:
+      SYNCDEMO_PORT: "3000"
+      POSTGRES_HOST: syncdemo-postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: syncdemo
+      POSTGRES_USER: syncdemo
+      POSTGRES_PASSWORD: syncdemo
+      # Every system mocked. Override per system with SYNCDEMO_BAMBOOHR_MODE / _STRIIM_MODE /
+      # _WORKDAY_MODE, and supply that system's credentials, to take one of them live.
+      SYNCDEMO_MODE: mock
+      SYNCDEMO_STRIIM_POLL_MS: "1500"
+    ports:
+      - "3000:3000"
+
+volumes:
+  syncdemo-pgdata:

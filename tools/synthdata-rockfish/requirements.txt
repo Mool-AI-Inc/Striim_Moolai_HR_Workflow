@@ -1,0 +1,5 @@
+--find-links https://packages.rockfish.ai/index.html
+rockfish==0.68.0
+pandas
+python-dotenv
+pytest

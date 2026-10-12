@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+# Secrets — only .env.example is committed
+.env
+.env.local
+# fixtures/employees.json IS committed (the data contract); do not ignore it.

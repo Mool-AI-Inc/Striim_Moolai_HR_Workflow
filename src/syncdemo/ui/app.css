@@ -1,0 +1,421 @@
+/* Dashboard styling for the pipeline demos, on the MoolAI brand.
+ *
+ * The tokens below are DERIVED from src/platform/theme/moolai.css, which carries the same brand
+ * values as the approval app on :5173. Nothing here invents a colour: every value is either a
+ * MoolAI token or a semantic status colour the brand has no equivalent for (see below).
+ *
+ * NO DARK MODE, deliberately. The MoolAI theme is a single cream palette and the app on :5173 has
+ * no dark variant, so adding one here would mean inventing a dozen brand decisions nobody made —
+ * and the two screens sitting side by side in a demo would not match. A viewer on a dark-mode
+ * laptop gets the same cream as everyone else, which is the point.
+ */
+
+@import url("/moolai.css");
+
+:root {
+  /* ---- surfaces: cream, the signature neutral ---- */
+  --bg:           var(--moolai-cream);
+  --surface:      var(--moolai-cream-raised);
+  --surface-2:    #F0EBE4;                      /* one step down from cream-raised, for headers */
+  --line:         #E3DAD2;                      /* warm-grey, lightened for hairlines */
+  --line-strong:  var(--moolai-warm-grey);
+
+  /* ---- ink ---- */
+  --ink:    var(--moolai-charcoal);
+  --ink-2:  #5C534E;                            /* charcoal warmed and lifted, for secondary */
+  --ink-3:  #8A7E77;                            /* muted labels on cream */
+
+  /* ---- primary ---- */
+  --accent:       var(--moolai-orange);
+  --accent-soft:  var(--moolai-peach);
+
+  /* ---- status.
+     Amber and magenta are MoolAI's own ("warm midpoint, attention fill" and "rejected"), so
+     processing and failed use the brand directly. There is no brand green, and a pipeline
+     dashboard genuinely needs one — so `synced` is a single added value, chosen to sit on cream
+     at the same weight as the brand colours rather than borrowed from somewhere brighter. ---- */
+  --pending:        var(--moolai-warm-grey);
+  --pending-bg:     #EFE9E2;
+  --processing:     #A96A12;                     /* amber, darkened for text contrast on cream */
+  --processing-bg:  #FBEFD9;
+  --synced:         #0F7A58;
+  --synced-bg:      #E0F0E8;
+  --failed:         var(--moolai-magenta);
+  --failed-bg:      #FCE4E9;
+
+  /* ---- mode badges ---- */
+  --mock:     #6B4FBB;
+  --mock-bg:  #EFEAFC;
+  --live:     #0F7A58;
+  --live-bg:  #E0F0E8;
+
+  --radius: var(--moolai-radius-card);
+  --shadow: 0 1px 2px rgba(33, 33, 33, .05), 0 6px 18px rgba(33, 33, 33, .06);
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 14px/1.55 var(--moolai-font-product);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2 { margin: 0; font-weight: var(--moolai-weight-emphasis); letter-spacing: -.01em; }
+h1 { font-size: 17px; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-2); }
+
+/* ── top bar ─────────────────────────────────────────────────────────────────── */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 14px 20px; background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 20;
+}
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand-mark {
+  width: 30px; height: 30px; border-radius: 8px; flex: none;
+  background: var(--moolai-gradient-mark);
+}
+.subtitle { margin: 2px 0 0; font-size: 12px; color: var(--ink-2); font-family: var(--mono); }
+.arrow { color: var(--ink-3); }
+
+.topbar-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
+.mode-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.badge {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+  padding: 3px 7px; border-radius: var(--moolai-radius-pill); white-space: nowrap;
+}
+.badge.mock { color: var(--mock); background: var(--mock-bg); }
+.badge.live { color: var(--live); background: var(--live-bg); }
+
+.conn { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-2); }
+.conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pending); }
+.conn.on .conn-dot { background: var(--synced); box-shadow: 0 0 0 3px var(--synced-bg); }
+.conn.off .conn-dot { background: var(--failed); box-shadow: 0 0 0 3px var(--failed-bg); }
+
+/* ── action bar ──────────────────────────────────────────────────────────────── */
+.actionbar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 20px; background: var(--surface-2); border-bottom: 1px solid var(--line);
+}
+.spacer { flex: 1; }
+
+.btn {
+  font: inherit; font-weight: 500; cursor: pointer;
+  padding: 8px 14px; border-radius: 8px;
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink);
+  transition: background var(--moolai-duration-fast) var(--moolai-ease),
+              border-color var(--moolai-duration-fast) var(--moolai-ease),
+              transform 60ms var(--moolai-ease);
+}
+.btn:hover { border-color: var(--accent); }
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-ghost { background: transparent; }
+.btn-tiny { padding: 4px 9px; font-size: 12px; border-radius: 6px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.faults { position: relative; }
+.faults > summary { list-style: none; display: inline-block; }
+.faults > summary::-webkit-details-marker { display: none; }
+.faults-panel {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 340px;
+  display: grid; gap: 9px;
+  padding: 14px; background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.faults-panel label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.faults-note { margin: 0; font-size: 12px; color: var(--ink-2); }
+.faults-caveat { padding-top: 8px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 11.5px; }
+
+/* ── layout ──────────────────────────────────────────────────────────────────── */
+main { padding: 18px 20px 40px; display: grid; gap: 18px; max-width: 1500px; margin: 0 auto; }
+
+.cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); }
+
+.panel {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+}
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--surface-2);
+}
+.split { display: grid; gap: 18px; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
+@media (max-width: 1000px) { .split { grid-template-columns: 1fr; } }
+
+/* ── system cards ────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 14px 16px; display: grid; gap: 10px;
+  border-top: 3px solid var(--line-strong);
+}
+.card.ok { border-top-color: var(--synced); }
+.card.bad { border-top-color: var(--failed); }
+.card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.card-name { font-weight: 600; font-size: 14px; }
+.card-metric { font-size: 26px; font-weight: 600; line-height: 1; letter-spacing: -.02em; }
+.card-metric small { font-size: 11px; font-weight: 500; color: var(--ink-2); letter-spacing: 0; }
+.kv { display: grid; gap: 4px; font-size: 12px; }
+.kv div { display: flex; gap: 6px; }
+.kv dt { color: var(--ink-3); flex: none; min-width: 74px; }
+.kv dd { margin: 0; color: var(--ink-2); overflow-wrap: anywhere; }
+.kv dd.mono { font-family: var(--mono); font-size: 11.5px; }
+
+/* ── pipeline ────────────────────────────────────────────────────────────────── */
+.pipeline { padding: 18px 16px; display: grid; gap: 0; }
+
+.node {
+  border: 1px solid var(--line-strong); border-radius: var(--radius);
+  padding: 11px 14px; background: var(--surface-2);
+  display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: 12px;
+  transition: border-color .2s, background .2s, box-shadow .2s;
+}
+.node .n-icon {
+  width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 13px; font-weight: 700; color: #fff; background: var(--pending);
+}
+.node .n-title { font-weight: 600; font-size: 13.5px; }
+.node .n-detail { font-size: 11.5px; color: var(--ink-2); margin-top: 2px; overflow-wrap: anywhere; }
+.node .n-status {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: var(--moolai-radius-pill);
+}
+
+.node.pending    { opacity: .62; }
+.node.pending    .n-status { color: var(--pending); background: var(--pending-bg); }
+.node.processing { border-color: var(--processing); background: var(--processing-bg); box-shadow: 0 0 0 3px color-mix(in srgb, var(--processing) 15%, transparent); }
+.node.processing .n-icon { background: var(--processing); animation: pulse 1.1s ease-in-out infinite; }
+.node.processing .n-status { color: var(--processing); background: var(--surface); }
+.node.synced     { border-color: var(--synced); }
+.node.synced     .n-icon { background: var(--synced); }
+.node.synced     .n-status { color: var(--synced); background: var(--synced-bg); }
+.node.failed     { border-color: var(--failed); background: var(--failed-bg); }
+.node.failed     .n-icon { background: var(--failed); }
+.node.failed     .n-status { color: var(--failed); background: var(--surface); }
+
+@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.16); } }
+
+.connector { height: 30px; display: grid; place-items: center; position: relative; }
+.connector::before {
+  content: ""; position: absolute; inset: 0 auto; left: 50%; width: 2px; height: 100%;
+  background: var(--line-strong); transform: translateX(-50%);
+}
+.connector .c-label {
+  position: relative; z-index: 1; font-size: 10.5px; font-family: var(--mono);
+  color: var(--ink-3); background: var(--surface); padding: 1px 7px; border-radius: var(--moolai-radius-pill);
+  border: 1px solid var(--line);
+}
+.connector.active::before { background: var(--processing); }
+.connector.active .c-label { color: var(--processing); border-color: var(--processing); }
+.connector.done::before { background: var(--synced); }
+
+.hint { margin: 0; padding: 0 16px 16px; font-size: 12px; color: var(--ink-3); }
+
+/* ── log ─────────────────────────────────────────────────────────────────────── */
+.follow { font-size: 11.5px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+.log {
+  margin: 0; padding: 10px 14px; list-style: none;
+  height: 420px; overflow-y: auto; font-family: var(--mono); font-size: 12px;
+}
+.log li { display: flex; gap: 9px; padding: 3px 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+.log time { color: var(--ink-3); flex: none; }
+.log .msg { overflow-wrap: anywhere; }
+.log li.success .msg { color: var(--synced); }
+.log li.warn .msg { color: var(--processing); }
+.log li.error .msg { color: var(--failed); }
+.log li.fresh { animation: slideIn .28s ease-out; }
+@keyframes slideIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: none; } }
+
+/* ── table ───────────────────────────────────────────────────────────────────── */
+.table-wrap { overflow-x: auto; }
+.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
+.grid th {
+  text-align: left; padding: 9px 12px; font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--ink-3); background: var(--surface-2);
+  border-bottom: 1px solid var(--line); white-space: nowrap; font-weight: 600;
+}
+.grid td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.grid tr:last-child td { border-bottom: 0; }
+.grid tr.focused td { background: var(--accent-soft); }
+.grid .id { font-family: var(--mono); font-size: 12px; }
+.chip {
+  display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; padding: 3px 7px; border-radius: var(--moolai-radius-pill); white-space: nowrap;
+}
+.chip.pending { color: var(--pending); background: var(--pending-bg); }
+.chip.processing { color: var(--processing); background: var(--processing-bg); }
+.chip.synced { color: var(--synced); background: var(--synced-bg); }
+.chip.failed { color: var(--failed); background: var(--failed-bg); }
+.muted { color: var(--ink-3); font-size: 12px; }
+.slot-note { padding: 12px 16px 0; margin: 0; }
+.slot { font-family: var(--mono); font-size: 12px; }
+.chip.available { color: var(--ink-3); background: var(--pending-bg); }
+.chip.claimed { color: var(--accent); background: var(--accent-soft); }
+.chip.syncing { color: var(--processing); background: var(--processing-bg); }
+.node .n-slot {
+  display: inline-block; margin-top: 4px; font-family: var(--mono); font-size: 11px;
+  padding: 2px 7px; border-radius: var(--moolai-radius-pill); color: var(--accent); background: var(--accent-soft);
+}
+.empty { padding: 28px 16px; text-align: center; color: var(--ink-3); }
+
+/* ── dialog ──────────────────────────────────────────────────────────────────── */
+.dialog {
+  border: 1px solid var(--line-strong); border-radius: 14px; padding: 0;
+  background: var(--surface); color: var(--ink); box-shadow: 0 20px 60px rgba(0,0,0,.28);
+  width: min(620px, calc(100vw - 32px));
+}
+.dialog::backdrop { background: rgba(10, 16, 22, .55); backdrop-filter: blur(2px); }
+.dialog form { padding: 20px 22px 18px; }
+.dialog-note { margin: 6px 0 16px; font-size: 12.5px; color: var(--ink-2); }
+.fields { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+@media (max-width: 560px) { .fields { grid-template-columns: 1fr; } }
+.fields label { display: grid; gap: 5px; font-size: 12px; color: var(--ink-2); }
+.fields label.wide { grid-column: 1 / -1; }
+.fields input {
+  font: inherit; color: var(--ink); background: var(--surface-2);
+  border: 1px solid var(--line-strong); border-radius: 7px; padding: 8px 10px;
+}
+.fields input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+.form-error {
+  margin: 14px 0 0; padding: 9px 11px; border-radius: 7px; font-size: 12.5px;
+  color: var(--failed); background: var(--failed-bg);
+}
+.dialog-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; }
+
+.picker {
+  font: inherit; font-size: 12px; padding: 5px 8px; border-radius: 7px;
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink);
+  max-width: 260px;
+}
+
+/* ── reverse pipeline: the consequence banner ────────────────────────────────── */
+/* Shared stylesheet, so the reverse dashboard on :3001 looks like the forward one on :3000.
+   The banner exists because that pipeline's final stage creates a permanent human record in a
+   real HRIS, and "BambooHR is live" needs to be impossible to miss on a projector. */
+.warnbar {
+  margin: 0; padding: 10px 20px; font-size: 12.5px; line-height: 1.5;
+  color: var(--ink-2); background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+}
+.warnbar.on {
+  color: var(--failed); background: var(--failed-bg);
+  border-bottom-color: var(--failed); font-weight: 500;
+}
+
+
+/* ── landing gate ────────────────────────────────────────────────────────────────
+   The first screen on both dashboards, in the language of the HR Workflow
+   configurator in the approval app: the systems as a sequence, how many are connected,
+   and a Launch demo button.
+
+   One difference from that screen, deliberately: the configurator's vendor pickers are
+   cosmetic, whereas the dots here are driven by each system's real health check. A
+   landing page that claimed "Connected" without asking would be the one dishonest
+   pixel in an app whose whole point is that the status is real. */
+body.pre-launch .topbar,
+body.pre-launch .actionbar,
+body.pre-launch .warnbar,
+body.pre-launch main { display: none; }
+body:not(.pre-launch) #landing { display: none; }
+
+#landing { max-width: 1000px; margin: 0 auto; padding: 48px 20px 64px; }
+.lp-header { display: flex; align-items: center; gap: 12px; margin-bottom: 40px; }
+.lp-mark {
+  width: 32px; height: 32px; border-radius: 9px; flex: none;
+  background: var(--moolai-gradient-mark);
+}
+.lp-brand { font-weight: 700; font-size: 16px; letter-spacing: -.01em; }
+.lp-product {
+  font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-3); padding-left: 12px; border-left: 1px solid var(--line-strong);
+}
+.lp-title { margin: 0 0 10px; font-size: var(--moolai-text-2xl); font-weight: var(--moolai-weight-display); letter-spacing: -.02em; line-height: 1.2; }
+.lp-lead { margin: 0 0 36px; font-size: 15px; color: var(--ink-2); max-width: 70ch; }
+
+.lp-journey { list-style: none; margin: 0 0 36px; padding: 0; }
+.lp-stage { display: grid; grid-template-columns: 54px 1fr; gap: 18px; }
+.lp-spine { display: grid; grid-template-rows: auto 1fr; justify-items: center; gap: 6px; }
+.lp-n {
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  font-family: var(--mono); font-size: 11.5px; font-weight: 700;
+  color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--line-strong);
+}
+.lp-stage.ok .lp-n { color: #fff; background: var(--synced); border-color: var(--synced); }
+.lp-stage.bad .lp-n { color: #fff; background: var(--failed); border-color: var(--failed); }
+.lp-rail { width: 2px; background: var(--line-strong); min-height: 22px; }
+.lp-stage:last-child .lp-rail { display: none; }
+
+.lp-body { padding-bottom: 22px; min-width: 0; }
+.lp-role {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-3);
+}
+.lp-name { margin: 3px 0 4px; font-size: 16px; font-weight: 600; }
+.lp-detail { margin: 0 0 8px; font-size: 12.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+.lp-badges { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lp-conn { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--synced); }
+.lp-conn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--synced); }
+.lp-conn.bad { color: var(--failed); }
+.lp-conn.bad .dot { background: var(--failed); }
+
+.lp-footer {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  padding-top: 22px; border-top: 1px solid var(--line);
+}
+.lp-count { margin: 0; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
+.lp-count .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--synced); }
+.lp-count.partial .dot { background: var(--processing); }
+.lp-launch { font-size: 15px; padding: 11px 22px; }
+
+
+/* ── design-system house patterns ────────────────────────────────────────────────
+   From the moolai-design-system skill. Three of its named patterns were being
+   violated here, and each fix is a specific instruction rather than taste:
+
+   "orange-square eyebrow labels"  — section labels get the square, not plain caps.
+   "pill CTAs with ›"              — primary actions are pills; the chevron already existed.
+   "No timid type scale. Largest 32px, smallest 14px means you have no scale."
+   "No uniform card grids. Three equal cards in a row is the most common dead layout
+    on the internet. Vary size, weight, density."
+
+   The last one is why the first system card spans two columns: it is the source of
+   truth in both pipelines, so it is also the one hero the composition rules ask for,
+   and the row stops being four identical boxes. */
+
+h2 { display: flex; align-items: center; gap: 8px; }
+h2::before {
+  content: ""; width: 9px; height: 9px; flex: none;
+  background: var(--moolai-orange); border-radius: 2px;
+}
+
+/* Reach on the scale: the metric is the thing you read across a room. */
+.card-metric { font-size: var(--moolai-text-2xl); font-weight: var(--moolai-weight-display); }
+.lp-lead { font-size: var(--moolai-text-base); }
+
+/* One grid break: the source system leads, the rest follow. */
+.cards { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+@media (min-width: 1040px) {
+  .cards { grid-template-columns: 1.45fr 1fr 1fr 1fr; }
+  .cards > .card:first-child { padding: 18px 20px; }
+  .cards > .card:first-child .card-metric { font-size: var(--moolai-text-3xl); line-height: 1; }
+}
+
+/* Pill CTAs. */
+.btn-primary, .lp-launch { border-radius: var(--moolai-radius-pill); }
+
+/* The real logomark, not a gradient square. */
+.brand-mark, .lp-mark {
+  background: transparent !important;
+  background-image: url("/logomark.svg") !important;
+  background-size: contain; background-repeat: no-repeat; background-position: center;
+  border-radius: 0;
+}
+.lp-mark { width: 38px; height: 38px; }
+.brand-mark { width: 30px; height: 30px; }

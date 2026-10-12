@@ -1,0 +1,70 @@
+-- Continuous tail of the Instant Teams ledger, source to target.
+--
+-- START THIS BEFORE THE INITIAL LOAD. The replication slot must exist and be held
+-- before the bulk read begins, or writes landing during the bulk copy are lost with
+-- no error anywhere on the platform.
+--
+-- Property names here are NOT from the documentation. They were read off the working
+-- pipeline sarah_moolai.sarah1_CDC with `describe_component` (Striim agent repo,
+-- FINDINGS.md §14 on why documented names cannot be trusted).
+--
+-- Three that matter and are easy to miss:
+--   postgresConfig     without it you do not get wal2json, whatever the slot says
+--   stringtype=unspecified   the JDBC flag that lets jsonb survive the writer
+--   Tables uses ';' between tables and ',' inside a source,target pair
+--
+-- ADDING A COLUMN TO A REPLICATED TABLE MEANS RECREATING THIS APPLICATION.
+-- The PostgreSQLReader generates and CACHES a type for each table
+-- (LedgerSource_public_employees_Type_1_0). That type is pinned to the column list it saw
+-- first and is NOT refreshed by STOP/START or RESUME. Alter the source table and the app
+-- halts with:
+--
+--   Difference in the metadata between existing type and the current one
+--   Type already exists with a different metadata for the table - { public_employees }
+--
+-- RESUME on that is a trap: it reports Success, returns the app to RUNNING, and it halts
+-- again on the next event. Worse, the reader can ACK the replication slot before the writer
+-- fails, so the events in flight are consumed and gone — they will not replay, and the rows
+-- have to be backfilled from the source by hand. The only real fix is
+-- `deploy.py drop InstantTeamsCDC` then `deploy` then `start`, which regenerates the type.
+-- Alter the TARGET table first, in the same shape, or the writer halts instead on
+-- "Target has less number of column as compared to source".
+
+-- No CREATE NAMESPACE here. Striim rejects `CREATE NAMESPACE IF NOT EXISTS` as a
+-- syntax error, whatever the documentation implies; the namespace is created once,
+-- by hand, and this file only selects it.
+USE __NS__;
+
+CREATE APPLICATION InstantTeamsCDC;
+
+CREATE SOURCE LedgerSource USING PostgreSQLReader (
+  ConnectionURL: 'jdbc:postgresql://__HOST__/__SRCDB__?sslmode=require&stringtype=unspecified',
+  Username: '__USER__',
+  Password: '__PASS__',
+  ReplicationSlotName: '__SLOT__',
+  postgresConfig: '{"ReplicationPluginConfig":{"Name":"WAL2JSON","Format":"1"}}',
+  Tables: 'public.employees;public.send_ledger;public.sms_opt_out;public.pending_approvals',
+  FilterTransactionBoundaries: true,
+  ConnectionRetryPolicy: 'retryInterval=30, maxRetries=3'
+)
+OUTPUT TO LedgerStream;
+
+CREATE TARGET LedgerTarget USING DatabaseWriter (
+  ConnectionURL: 'jdbc:postgresql://__HOST__/__TGTDB__?sslmode=require&stringtype=unspecified',
+  Username: '__USER__',
+  Password: '__PASS__',
+  Tables: 'public.employees,public.employees;public.send_ledger,public.send_ledger;public.sms_opt_out,public.sms_opt_out;public.pending_approvals,public.pending_approvals',
+  CommitPolicy: 'EventCount:100,Interval:5',
+  BatchPolicy: 'EventCount:100,Interval:5',
+  CheckpointTable: 'CHKPOINT',
+  -- DUPLICATE_ROW_EXISTS is required, not sloppiness. CDC is started before the bulk
+  -- load so the slot is pinned, which means every row written in the overlap window is
+  -- delivered twice: once by CDC, once by the initial load. Ignoring the second one
+  -- keeps the CDC value, which is the newer of the two. Without this the pipeline halts
+  -- partway through the bulk load every single time.
+  IgnorableExceptionCode: 'DUPLICATE_ROW_EXISTS,NO_OP_UPDATE,NO_OP_PKUPDATE,NO_OP_DELETE',
+  ConnectionRetryPolicy: 'retryInterval=30, maxRetries=3'
+)
+INPUT FROM LedgerStream;
+
+END APPLICATION InstantTeamsCDC;

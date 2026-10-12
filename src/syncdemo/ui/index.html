@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Employee Sync Pipeline</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔄</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body class="pre-launch">
+
+<section id="landing" aria-label="Launch">
+  <div class="lp-header">
+    <span class="lp-mark" aria-hidden="true"></span>
+    <span class="lp-brand">MoolAI</span>
+    <span class="lp-product">HR Data Pipeline</span>
+  </div>
+  <h1 class="lp-title">BambooHR to Workday, through Striim</h1>
+  <p class="lp-lead">An employee is created in BambooHR, Striim notices the change, PostgreSQL is what the platform reads, and Workday is downstream. Every status on the next screen is read from the system it names — the dots below are live health checks, not decoration.</p>
+  <ol class="lp-journey" id="lpJourney"></ol>
+  <div class="lp-footer">
+    <p class="lp-count" id="lpCount"><span class="dot" aria-hidden="true"></span></p>
+    <button type="button" class="btn btn-primary lp-launch" id="btnLaunch">
+      Launch demo <span aria-hidden="true">›</span>
+    </button>
+  </div>
+</section>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <div>
+      <h1>Employee Sync Pipeline</h1>
+      <p class="subtitle">BambooHR <span class="arrow">→</span> Striim <span class="arrow">→</span> PostgreSQL <span class="arrow">→</span> Workday</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <div id="modeBadges" class="mode-badges"></div>
+    <span id="connDot" class="conn" title="event stream">
+      <span class="conn-dot"></span><span class="conn-label">connecting</span>
+    </span>
+  </div>
+</header>
+
+<div class="actionbar">
+  <button id="btnCreate" class="btn btn-primary">+ Create Employee in BambooHR</button>
+  <button id="btnSeed" class="btn">Fill demo values</button>
+  <button id="btnForce" class="btn" title="Make Striim re-read BambooHR now. In live mode this restarts the real Striim application, which takes about 15 seconds — its reader is floored at 300s, so this is the only way to see a new hire immediately.">Force Striim read</button>
+  <span class="spacer"></span>
+  <details class="faults">
+    <summary class="btn btn-ghost">Failure simulation</summary>
+    <div class="faults-panel">
+      <p class="faults-note">
+        Toggle a fault, then create an employee to watch the pipeline stop at that stage and offer a retry.
+      </p>
+      <label><input type="checkbox" data-fault="striimStall"> Striim stalls (stops detecting changes)</label>
+      <label><input type="checkbox" data-fault="postgresDown"> PostgreSQL write fails</label>
+      <label><input type="checkbox" data-fault="workdayFail"> Workday sync fails</label>
+      <p class="faults-note faults-caveat">
+        The PostgreSQL fault is injected at the write, not by stopping the database — this dashboard
+        keeps its own state there, so a genuinely stopped Postgres would take the whole app down
+        rather than show you a failed stage.
+      </p>
+    </div>
+  </details>
+  <button id="btnReset" class="btn btn-ghost">Reset demo</button>
+</div>
+
+<main>
+  <!-- ── the four systems ───────────────────────────────────────────────────────── -->
+  <section class="cards" id="cards" aria-label="System status"></section>
+
+  <div class="split">
+    <!-- ── pipeline visualisation ──────────────────────────────────────────────── -->
+    <section class="panel" aria-label="Live pipeline">
+      <div class="panel-head">
+        <h2>Live pipeline</h2>
+        <select id="focusPick" class="picker" aria-label="Which employee to follow"></select>
+      </div>
+      <div id="pipeline" class="pipeline"></div>
+      <p id="pipelineHint" class="hint"></p>
+    </section>
+
+    <!-- ── activity log ────────────────────────────────────────────────────────── -->
+    <section class="panel" aria-label="Activity log">
+      <div class="panel-head">
+        <h2>Activity</h2>
+        <label class="follow"><input type="checkbox" id="followTail" checked> follow</label>
+      </div>
+      <ol id="log" class="log"></ol>
+    </section>
+  </div>
+
+  <!-- ── Workday/Adaptive slot monitor ──────────────────────────────────────────── -->
+  <section class="panel" aria-label="Workday slot monitor">
+    <div class="panel-head">
+      <h2>Workday / Adaptive slot monitor</h2>
+      <span id="slotSummary" class="muted"></span>
+    </div>
+    <p class="hint slot-note">
+      Pre-allocated members. Adaptive cannot create dimension members through its import API,
+      so an administrator allocates empty members and the pipeline claims one per new hire.
+      Only these members are ever written — nothing outside the pool.
+    </p>
+    <div class="table-wrap">
+      <table class="grid">
+        <thead><tr><th>Slot</th><th>Employee</th><th>BambooHR id</th><th>Status</th><th>Detail</th></tr></thead>
+        <tbody id="slotRows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── employees ──────────────────────────────────────────────────────────────── -->
+  <section class="panel" aria-label="Employees">
+    <div class="panel-head">
+      <h2>Employees in PostgreSQL</h2>
+      <span id="empCount" class="muted"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="grid">
+        <thead>
+          <tr>
+            <th>Employee ID</th><th>Name</th><th>Email</th><th>Department</th>
+            <th>BambooHR</th><th>Striim</th><th>PostgreSQL</th><th>Workday</th><th>Slot</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="empRows"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<!-- ── create form ──────────────────────────────────────────────────────────────── -->
+<dialog id="createDialog" class="dialog">
+  <form id="createForm" method="dialog">
+    <h2>Create employee in BambooHR</h2>
+    <p class="dialog-note">
+      This writes to the source system only. Striim finds the change on its own — nothing below
+      is pushed by this form. The pay rate is the figure that actually reaches Workday/Adaptive
+      (<code>PY Pay</code> is the only writable column), so without it the Workday stage stops
+      rather than writing a zero over a real value.
+    </p>
+    <div class="fields">
+      <label>Employee ID <input name="employeeId" required placeholder="EMP-1001" autocomplete="off"></label>
+      <label>First name <input name="firstName" required placeholder="Sarah" autocomplete="off"></label>
+      <label>Last name <input name="lastName" required placeholder="Smith" autocomplete="off"></label>
+      <label class="wide">Email <input name="email" type="email" required placeholder="sarah@example.com" autocomplete="off"></label>
+      <label>Job title <input name="jobTitle" placeholder="Forward Deployed Engineer" autocomplete="off"></label>
+      <label>Department <input name="department" placeholder="Engineering" autocomplete="off"></label>
+      <label>Location <input name="location" placeholder="San Francisco" autocomplete="off"></label>
+      <label>Phone <input name="phone" placeholder="+1 415 555 0142" autocomplete="off"></label>
+      <label>Hire date <input name="hireDate" type="date"></label>
+      <label>Salary / pay rate
+        <input name="payRate" type="number" step="0.01" min="0" placeholder="100000" autocomplete="off">
+      </label>
+    </div>
+    <p id="formError" class="form-error" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" id="btnCancel" class="btn btn-ghost">Cancel</button>
+      <button type="submit" id="btnSubmit" class="btn btn-primary">Create</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/app.js"></script>
+</body>
+</html>

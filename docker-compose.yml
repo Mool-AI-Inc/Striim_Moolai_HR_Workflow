@@ -1,0 +1,45 @@
+# Two profiles:
+#   runtime — the prod-VM data plane: our Postgres ledger + the Temporal dev server.
+#   dev     — local/CI/demo additions (the SaaS simulator).
+#
+# The Node app services (worker / ingress / approval-api / approval-app) run on the VM from a
+# built image; their build context + entrypoints land with the deployment work, not Plan 0.
+# Plan 0's only compose dependency is `app-postgres` (the integration-tier ledger test):
+#   docker compose --profile runtime up -d app-postgres
+services:
+  app-postgres:
+    image: postgres:16
+    profiles: ["runtime"]
+    environment:
+      POSTGRES_USER: instant
+      POSTGRES_PASSWORD: instant
+      POSTGRES_DB: instant_ledger
+    ports:
+      - "5433:5432"
+    volumes:
+      - app-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U instant -d instant_ledger"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Temporal dev server (SQLite-backed `start-dev`) — the MVP runtime. Time-skipping TESTS use the
+  # in-process @temporalio/testing server instead; this service is for the running demo/VM.
+  # ponytail: dev-server shortcut — upgrade path is temporalio/auto-setup + Postgres, or Temporal Cloud.
+  temporal:
+    image: temporalio/temporal:latest
+    profiles: ["runtime"]
+    # Runs as uid 1000 by default, but the named volume mounts /data as root → the dev server can't create
+    # the SQLite file (CANTOPEN). Run as root so it can write its own persistence volume.
+    user: root
+    command: server start-dev --ip 0.0.0.0 --db-filename /data/temporal.db
+    ports:
+      - "7233:7233"
+      - "8233:8233"
+    volumes:
+      - temporal-data:/data
+
+volumes:
+  app-postgres-data:
+  temporal-data:

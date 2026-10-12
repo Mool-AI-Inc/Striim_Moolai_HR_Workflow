@@ -1,0 +1,98 @@
+-- Leg 1 of the HRIS pipeline: BambooHR -> Postgres.
+--
+-- Pulls employee records out of a real HRIS and lands them in the same Neon Postgres the
+-- Instant Teams platform already reads. That closes a real gap: today the platform reads a
+-- Paylocity SIMULATOR, so it has never been pointed at a live HR system. This points it at
+-- one without changing a line of workflow code — the landing table is mapped into the
+-- `employees` table the app already reads in LEDGER_MODE=pg, by
+-- striim/map_bamboohr_to_employees.sql.
+--
+-- PROPERTY NAMES WERE NOT GUESSED. The BambooHR Reader is in Preview and its properties are
+-- not in the public docs, so they were discovered against the live cluster by creating the
+-- source and reading back DESCRIBE. Verified working shape:
+--
+--   AuthenticationMode  'API token'
+--   APIKey              the BambooHR API key   <- REQUIRED, stored encrypted
+--   APIToken            also accepted; APIKey is the one that authenticates
+--   Domain              the BambooHR subdomain, NOT a full URL  <- REQUIRED
+--   Tables              semicolon-delimited
+--   Mode                Automated | InitialLoad | IncrementalLoad   (exact casing)
+--   MigrateSchema       true -> the reader creates the target table for you
+--
+-- Three things that cost time to find:
+--   * Mode is case-sensitive and unspaced. 'Initial load' fails with
+--     "No enum constant com.striim.app.source.enums.ReaderMode.Initial load".
+--   * Domain is required and separate from any endpoint URL. Omitting it fails with
+--     "Please provide a valid value for Domain."
+--   * A dead BambooHR tenant does not fail as an auth error. An expired trial answers
+--     HTTP 503 on the API while its portal still redirects, and the reader surfaces that as
+--     "Table [Employees]: Test Connection failure. HTTP protocol error. 404 Not Found."
+--     Check the tenant with a plain curl before believing the reader is misconfigured.
+--
+-- WHY ONLY `Employees` IS READ HERE — this was previously wrong in this file.
+-- 'jobInfo;employmentStatus;compensation' appear in BambooHR's /meta/tables and were once
+-- configured here on the theory that they carry effective-dated role, status and pay. They do
+-- not arrive. The connector accepts them silently — no error, app stays RUNNING — and creates
+-- no landing table for them. Verified: bamboohr_jobinfo, bamboohr_employmentstatus and
+-- bamboohr_compensation do not exist in Postgres after a successful load. Leaving them
+-- configured advertises a capability the pipeline does not have, so they are gone. The fields
+-- they were meant to supply (hireDate, dateOfBirth, status, payRate) come from BambooHR's
+-- custom-report endpoint instead — see scripts/enrich-bamboohr.ts.
+
+USE __NS__;
+
+CREATE APPLICATION BambooHRToPostgres;
+
+CREATE SOURCE BambooEmployees USING Global.BambooHRReader (
+  AuthenticationMode: 'API token',
+  APIKey: '__BAMBOO_KEY__',
+  APIToken: '__BAMBOO_KEY__',
+  Domain: '__BAMBOO_DOMAIN__',
+  -- The reader's `Employees` table is BambooHR's DIRECTORY: 20 columns of identity and
+  -- contact detail. The directory omits inactive and terminated people — the new tenant
+  -- returns 90 here against 109 in the custom report. That gap is the reason `status` has to
+  -- come from the report, and it is also why a row's ABSENCE from this feed is not evidence
+  -- that the person has left.
+  Tables: 'Employees',
+  -- Kept deliberately even though Tables is explicit: the reader is in Preview, and an
+  -- earlier deployed copy of this app carried it. Cheap insurance against the reader
+  -- widening what it enumerates in a future build.
+  ExcludeTables: 'TimeOffRequests',
+  -- Automated: bulk-read once, then keep polling for changes. THIS is what makes the demo
+  -- work — InitialLoad reads once and stops, so a person added in BambooHR afterwards never
+  -- arrives. Automated is the difference between a snapshot and a live feed.
+  Mode: 'Automated',
+  MigrateSchema: true,
+  -- 5m, and NOT because 5m is good: the connector enforces a floor. '30s' is rejected at
+  -- CREATE SOURCE time with "Please provide a valid value greater than 300s for Polling
+  -- Interval." An earlier version of this file specified 30s with a comment claiming it was
+  -- measured; it cannot have been, because the source will not create at that value. The
+  -- deployed app running at 5m was therefore never configuration drift — it was the only
+  -- value the reader accepts.
+  --
+  -- What this means for a demo, stated plainly: a person added in BambooHR can take up to
+  -- five minutes to appear in bamboohr_employees. Do not wait on that in front of an
+  -- audience. The enrich step reads BambooHR's custom-report endpoint directly and is bound
+  -- by no such floor, so a new hire reaches the platform's `employees` table on the
+  -- watcher's 30s cycle; Striim's landing table catches up behind it.
+  PollingInterval: '5m'
+)
+OUTPUT TO BambooEmployeeStream;
+
+CREATE TARGET BambooLanding USING DatabaseWriter (
+  ConnectionURL: 'jdbc:postgresql://__HOST__/__DB__?sslmode=require&stringtype=unspecified',
+  Username: '__USER__',
+  Password: '__PASS__',
+  -- Landing table, deliberately separate from the app's own `employees` table. Striim owns
+  -- the shape here; a mapping step owns the app's contract. Mixing the two means every
+  -- change in BambooHR's payload is a change to the application's schema.
+  Tables: 'Employees,public.bamboohr_employees',
+  CommitPolicy: 'EventCount:200,Interval:10',
+  BatchPolicy: 'EventCount:200,Interval:10',
+  CheckpointTable: 'CHKPOINT',
+  IgnorableExceptionCode: 'DUPLICATE_ROW_EXISTS,NO_OP_UPDATE,NO_OP_PKUPDATE,NO_OP_DELETE',
+  ConnectionRetryPolicy: 'retryInterval=30, maxRetries=3'
+)
+INPUT FROM BambooEmployeeStream;
+
+END APPLICATION BambooHRToPostgres;
