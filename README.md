@@ -67,7 +67,10 @@ All tiers green (2026-08-24): `tsc` **0** · unit **85** · ui **4** · temporal
 
 ```bash
 npm install
+cp .env.example .env
 ```
+
+`.env` is gitignored and never leaves your machine. **Demo mode needs nothing in it** — every vendor URL points at the bundled simulator. For `live` mode, fill in your own credentials (see [`.env.example`](.env.example)) and set `PLATFORM_MODE=live`.
 
 ## Employee sync demo — BambooHR → Striim → PostgreSQL → Workday (`npm run syncdemo`)
 

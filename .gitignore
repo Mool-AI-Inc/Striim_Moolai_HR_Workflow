@@ -7,3 +7,5 @@ coverage/
 .env
 .env.local
 # fixtures/employees.json IS committed (the data contract); do not ignore it.
+# Scratch credential files — never commit these
+credentials*.txt
