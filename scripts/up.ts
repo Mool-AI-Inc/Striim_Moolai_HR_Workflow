@@ -3,6 +3,7 @@
  * @lifespan THROWAWAY — demo runner.
  *
  *   npm run up              API + simulator, UI, BambooHR watcher
+ *   npm run up -- --all     the above plus the sync demo (:3000) and reverse demo (:3001)
  *   npm run up -- --no-hris just the API + UI (quieter migration panel — see below)
  *
  * WHY THIS EXISTS
@@ -17,6 +18,8 @@
  *   1  api   npm run interactive     API on 8090, Paylocity simulator on 8085
  *   2  ui    npm run ui:dev          Vite, proxying to the API (started only once 8090 answers)
  *   3  hris  npm run watch:bamboohr  map + enrich every 30s, so BambooHR additions appear
+ *   4  sync  npm run syncdemo        --all only. the sync demo on :3000
+ *   5  rev   npm run reversedemo     --all only. the reverse pipeline on :3001
  *
  * A NOTE ON STEP 3, because it is a real trade-off and not a free win.
  * The watcher re-touches every BambooHR-sourced row on each cycle, which bumps updated_at and
@@ -34,6 +37,7 @@ import { createConnection } from "node:net";
 import { platform } from "node:process";
 
 const NO_HRIS = process.argv.includes("--no-hris");
+const ALL = process.argv.includes("--all");
 const API_PORT = 8090;
 
 interface Proc { name: string; script: string; child?: ChildProcess }
@@ -55,7 +59,9 @@ function pipe(name: string, child: ChildProcess): void {
 }
 
 function start(name: string, script: string): ChildProcess {
-  const child = spawn("npm", ["run", script], { stdio: ["ignore", "pipe", "pipe"], shell: true });
+  // Own process group on POSIX so killTree can take the whole tree below the shell.
+  const child = spawn("npm", ["run", script],
+    { stdio: ["ignore", "pipe", "pipe"], shell: true, detached: platform !== "win32" });
   pipe(name, child);
   child.on("exit", (code) => {
     if (code !== 0 && code !== null) console.log(`[${pad(name)}] exited with code ${code}`);
@@ -93,7 +99,8 @@ function killTree(child: ChildProcess | undefined): void {
   if (platform === "win32") {
     spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", shell: true });
   } else {
-    child.kill("SIGTERM");
+    // Negative pid = the whole group: the shell, npm, and the server itself.
+    try { process.kill(-child.pid, "SIGTERM"); } catch { child.kill("SIGTERM"); }
   }
 }
 
@@ -129,6 +136,17 @@ async function main(): Promise<void> {
   const ui = start("ui", "ui:dev");
   procs.push({ name: "ui", script: "ui:dev", child: ui });
 
+  if (ALL) {
+    const extras = [["sync", "syncdemo", 3000], ["rev", "reversedemo", 3001]] as const;
+    for (const [name, script, port] of extras) {
+      if (await portOpen(port)) {
+        console.log(`[${pad(name)}] already listening on ${port} — reusing it`);
+        continue;
+      }
+      procs.push({ name, script, child: start(name, script) });
+    }
+  }
+
   if (!NO_HRIS) {
     hris = start("hris", "watch:bamboohr");
   } else {
@@ -136,6 +154,7 @@ async function main(): Promise<void> {
   }
 
   console.log("\n  everything is starting. Open the URL Vite prints below (usually http://localhost:5173)");
+  if (ALL) console.log("  sync demo http://localhost:3000 — reverse demo http://localhost:3001");
   console.log("  press h to toggle the BambooHR watcher, q or Ctrl-C to stop everything\n");
 
   process.on("SIGINT", shutdown);
